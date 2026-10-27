@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>情绪音乐推荐系统</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='11' fill='%236c5ce7'/><text x='12' y='16' font-size='13' text-anchor='middle' fill='white'>♪</text></svg>">
+<script src="assets/lib/vue.global.prod.js"></script>
+<script src="assets/lib/face-api.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#1a1d24; --panel2:#22262f; --line:#2e3340;
+    --text:#e8eaf0; --sub:#9aa3b2; --accent:#6c5ce7;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    line-height:1.5; min-height:100vh;
+  }
+  #app{max-width:1100px;margin:0 auto;padding:24px 20px 60px}
+
+  /* 顶栏 */
+  header{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 0 22px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .logo{width:38px;height:38px;border-radius:10px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff}
+  .brand h1{font-size:18px;font-weight:600;letter-spacing:.5px}
+  .brand small{display:block;font-size:12px;color:var(--sub);font-weight:400}
+  .status{font-size:12px;color:var(--sub)}
+  .status b{color:var(--text)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px;vertical-align:middle}
+  .dot.ok{background:#2ecc71}.dot.busy{background:#f5c518}
+
+  /* 布局 */
+  .grid{display:grid;grid-template-columns:1.1fr 1fr;gap:20px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h2{font-size:14px;font-weight:600;color:var(--sub);margin-bottom:14px;
+    text-transform:uppercase;letter-spacing:1px}
+
+  /* 输入按钮 */
+  .tools{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+  .tools button{
+    background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:12px 8px;border-radius:10px;cursor:pointer;font-size:13px;
+    display:flex;flex-direction:column;align-items:center;gap:6px;transition:.15s}
+  .tools button:hover{border-color:var(--accent);background:#2a2f3a}
+  .tools button:disabled{opacity:.4;cursor:not-allowed}
+  .tools button .ic{font-size:18px}
+  input[type=file]{display:none}
+
+  /* 预览区 */
+  .stage{position:relative;background:#000;border-radius:10px;overflow:hidden;
+    min-height:240px;display:flex;align-items:center;justify-content:center}
+  .stage img,.stage video,.stage canvas{max-width:100%;max-height:360px;display:block}
+  .stage .empty{color:var(--sub);font-size:13px;padding:40px;text-align:center}
+  .cam-actions{display:flex;gap:8px;margin-top:10px}
+  .cam-actions button{flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);cursor:pointer;font-size:13px}
+  .cam-actions button:hover{border-color:var(--accent)}
+
+  /* 情绪结果 */
+  .emotion-main{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+  .emoji{font-size:46px;line-height:1}
+  .emotion-main .lbl{font-size:13px;color:var(--sub)}
+  .emotion-main .val{font-size:24px;font-weight:700}
+  .bars{display:flex;flex-direction:column;gap:8px}
+  .bar{display:grid;grid-template-columns:80px 1fr 48px;align-items:center;gap:10px;font-size:12px}
+  .bar .name{color:var(--sub)}
+  .bar .track{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .bar .fill{height:100%;background:var(--accent);width:0;transition:width .4s}
+  .bar .pct{text-align:right;color:var(--sub);font-variant-numeric:tabular-nums}
+
+  /* 歌曲列表 */
+  .sec-title{font-size:12px;color:var(--sub);margin:16px 0 8px;letter-spacing:.5px}
+  .song{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;
+    cursor:pointer;border:1px solid transparent}
+  .song:hover{background:var(--panel2);border-color:var(--line)}
+  .song.active{background:var(--panel2);border-color:var(--accent)}
+  .song img{width:44px;height:44px;border-radius:8px;background:#333;object-fit:cover}
+  .song .info{flex:1;min-width:0}
+  .song .t{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .song .a{font-size:12px;color:var(--sub)}
+  .song .play{font-size:16px;color:var(--sub);width:24px}
+  .song .src{font-size:10px;color:var(--sub);border:1px solid var(--line);
+    padding:1px 6px;border-radius:6px}
+
+  /* 播放器 */
+  .player{position:sticky;bottom:0;margin-top:20px;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;
+    display:flex;align-items:center;gap:14px}
+  .player .now{flex:1;min-width:0}
+  .player .now .t{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .player .now .a{font-size:12px;color:var(--sub)}
+  .player audio{height:36px;max-width:320px;width:40vw}
+
+  .tip{font-size:12px;color:var(--sub);margin-top:10px}
+  .err{color:#e74c3c;font-size:12px;margin-top:8px}
+  .loading{color:var(--sub);font-size:12px;padding:20px;text-align:center}
+
+  /* ===== 视觉增强 ===== */
+  /* 顶部情绪光晕：主题色随识别到的情绪变化 */
+  body{
+    background:
+      radial-gradient(1200px 500px at 50% -100px, var(--glow, #6c5ce726), transparent 70%),
+      var(--bg);
+    transition: background .8s;
+  }
+  .brand .logo{
+    background: var(--accent, #6c5ce7);
+    box-shadow: 0 4px 18px var(--glow, #6c5ce744);
+    transition: background .5s, box-shadow .5s;
+  }
+  /* 卡片浮起 */
+  .card{transition: border-color .2s, transform .2s, box-shadow .2s}
+  .card:hover{border-color:#3a4152; box-shadow:0 8px 30px rgba(0,0,0,.3)}
+  .tools button:hover{border-color:var(--accent,#6c5ce7); box-shadow:0 4px 14px var(--glow,#6c5ce733)}
+  /* 情绪概率条：圆角渐变 */
+  .bar .fill{border-radius:4px; background:linear-gradient(90deg, var(--accent,#6c5ce7), color-mix(in srgb, var(--accent,#6c5ce7) 60%, #fff));}
+  /* 正在播放：跳动的均衡器 */
+  .eq{display:inline-flex;align-items:flex-end;gap:2px;height:14px;margin-right:4px}
+  .eq span{width:3px;background:var(--accent,#6c5ce7);border-radius:2px;animation:eq 1s ease-in-out infinite}
+  .eq span:nth-child(1){animation-delay:0s;height:6px}
+  .eq span:nth-child(2){animation-delay:.2s;height:12px}
+  .eq span:nth-child(3){animation-delay:.4s;height:9px}
+  @keyframes eq{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.2)}}
+  .song.active{border-color:var(--accent,#6c5ce7)}
+  .song{transition:background .15s, transform .15s, border-color .15s}
+  .song:hover{transform:translateY(-1px)}
+  /* 播放器顶部光条 */
+  .player{border-top:2px solid var(--accent,#6c5ce7); box-shadow:0 -4px 24px var(--glow2)}
+  /* 滚动条 */
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#2e3340;border-radius:6px}
+  ::-webkit-scrollbar-thumb:hover{background:#3a4152}
+  ::-webkit-scrollbar-track{background:transparent}
+  /* 空状态图标 */
+  .empty-icon{font-size:40px;display:block;margin-bottom:8px;opacity:.4}
+  /* 叠加画布 */
+  .stage{position:relative}
+  .overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+  .opt{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);margin-top:10px}
+  .opt input{accent-color:var(--accent,#6c5ce7)}
+  /* Russell 坐标图 */
+  .circumplex{margin-top:16px;background:var(--panel2);border-radius:10px;padding:12px}
+  .cx-title{font-size:12px;color:var(--sub);margin-bottom:8px}
+  .circ-svg{width:100%;height:auto;display:block}
+</style>
+</head>
+<body>
+<div id="app" :style="rootStyle">
+  <header>
+    <div class="brand">
+      <div class="logo">♪</div>
+      <div>
+        <h1>情绪音乐推荐系统
+          <small>Face Emotion Recognition → Music Recommender</small>
+        </h1>
+      </div>
+    </div>
+    <div class="status">
+      <span class="dot" :class="modelReady ? 'ok' : 'busy'"></span>
+      模型状态：<b>{{ modelReady ? '已加载(本地)' : loadingText }}</b>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- 左：输入与预览 -->
+    <div class="card">
+      <h2>1. 获取人脸</h2>
+      <div class="tools">
+        <button @click="pickImage"><span class="ic">🖼</span>上传图片</button>
+        <button @click="pickVideo"><span class="ic">🎞</span>打开视频</button>
+        <button @click="startCamera"><span class="ic">📷</span>开启摄像头</button>
+        <button @click="snapshot" :disabled="!cameraOn"><span class="ic">📸</span>拍照</button>
+      </div>
+      <input type="file" ref="imgInput" accept="image/*" @change="onImage">
+      <input type="file" ref="vidInput" accept="video/*" @change="onVideo">
+
+      <div class="stage" ref="stageEl">
+        <img v-if="mediaType==='image' && mediaUrl" :src="mediaUrl" ref="imgEl">
+        <video v-else-if="mediaType==='video' && videoEl" ref="videoEl" controls></video>
+        <video v-else-if="cameraOn" ref="camEl" autoplay muted playsinline></video>
+        <canvas v-show="!!detection" ref="overlay" class="overlay"></canvas>
+        <div v-if="!mediaType && !cameraOn" class="empty"><span class="empty-icon">🎧</span>请选择上方方式输入人脸图片 / 视频 / 摄像头</div>
+      </div>
+
+      <label class="opt"><input type="checkbox" v-model="showLandmarks"> 显示68关键点</label>
+
+      <div class="cam-actions" v-if="cameraOn">
+        <button @click="stopCamera">关闭摄像头</button>
+      </div>
+      <div class="cam-actions" v-if="mediaType==='image'">
+        <button @click="reAnalyze">重新识别</button>
+      </div>
+      <div class="err" v-if="error">{{ error }}</div>
+    </div>
+
+    <!-- 右：情绪识别结果 -->
+    <div class="card">
+      <h2>2. 情绪识别结果（本地算法）</h2>
+      <div v-if="!emotion" class="loading">等待识别... 上传人脸后自动分析</div>
+      <template v-else>
+        <div class="emotion-main">
+          <div class="emoji">{{ emotionEmoji }}</div>
+          <div>
+            <div class="lbl">识别情绪</div>
+            <div class="val" :style="{color: emotionColor}">{{ emotionLabel }}</div>
+          </div>
+        </div>
+        <div class="bars">
+          <div class="bar" v-for="(p,k) in probabilities" :key="k">
+            <span class="name">{{ emotionCN[k] }}</span>
+            <div class="track"><div class="fill" :style="{width:(p*100).toFixed(0)+'%',background:emotionColor}"></div></div>
+            <span class="pct">{{ (p*100).toFixed(0) }}%</span>
+          </div>
+        </div>
+
+        <!-- Russell 情绪环形坐标（愉悦度 x 唤醒度） -->
+        <div class="circumplex">
+          <div class="cx-title">情绪坐标 · Russell Circumplex</div>
+          <svg viewBox="0 0 200 160" class="circ-svg">
+            <line x1="100" y1="10" x2="100" y2="150" stroke="#2e3340"/>
+            <line x1="20" y1="80" x2="180" y2="80" stroke="#2e3340"/>
+            <text x="100" y="12" font-size="8" fill="#9aa3b2" text-anchor="middle">唤醒度高</text>
+            <text x="100" y="156" font-size="8" fill="#9aa3b2" text-anchor="middle">唤醒度低</text>
+            <text x="14" y="83" font-size="8" fill="#9aa3b2" text-anchor="middle">愉悦低</text>
+            <text x="186" y="83" font-size="8" fill="#9aa3b2" text-anchor="middle">愉悦高</text>
+            <circle :cx="circumplex.x" :cy="160 - circumplex.y" r="7" :fill="emotionColor" opacity="0.9"/>
+            <circle :cx="circumplex.x" :cy="160 - circumplex.y" r="12" :fill="emotionColor" opacity="0.15"/>
+            <text :x="circumplex.x" :y="160 - circumplex.y - 14" font-size="9" :fill="emotionColor" text-anchor="middle">{{ emotionLabel }}</text>
+          </svg>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- 推荐歌曲 -->
+  <div class="card" style="margin-top:20px">
+    <h2>3. 为你推荐的歌曲</h2>
+    <div v-if="!emotion" class="loading">识别出情绪后，这里会显示推荐歌曲</div>
+    <template v-else>
+      <div class="sec-title">完整曲目（可整曲播放）</div>
+      <div class="song" v-for="(s,i) in localSongs" :key="'l'+i" :class="{active:current===s.name}" @click="play(s)">
+        <span class="play"><span v-if="current===s.name" class="eq"><span></span><span></span><span></span></span><template v-else>▶</template></span>
+        <img :src="s.artwork || defaultArt">
+        <div class="info"><div class="t">{{ s.name }}</div><div class="a">{{ s.artist }} · {{ s.album }}</div></div>
+        <span class="src">完整</span>
+      </div>
+
+      <div class="sec-title">热门歌推荐（iTunes · 30秒试听）<span v-if="onlineLoading"> 加载中...</span></div>
+      <div v-if="onlineError" class="err">{{ onlineError }}</div>
+      <div class="song" v-for="(s,i) in onlineSongs" :key="'o'+i" :class="{active:current===s.name}" @click="play(s)">
+        <span class="play"><span v-if="current===s.name" class="eq"><span></span><span></span><span></span></span><template v-else>▶</template></span>
+        <img :src="s.artwork || defaultArt">
+        <div class="info"><div class="t">{{ s.name }}</div><div class="a">{{ s.artist }}</div></div>
+        <span class="src">在线</span>
+      </div>
+    </template>
+  </div>
+
+  <!-- 播放器 -->
+  <div class="player" v-if="current">
+    <div class="now">
+      <div class="t">{{ current }}</div>
+      <div class="a">{{ currentArtist }}</div>
+    </div>
+    <audio ref="audioEl" controls autoplay></audio>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, reactive, onMounted, onBeforeUnmount, nextTick } = Vue;
+
+// 情绪 → 中文 / emoji / 颜色 / 搜索关键词
+const EMOTION_META = {
+  happy:     { cn:'开心', emoji:'😊', color:'#f5c518', keyword:'happy upbeat pop' },
+  sad:       { cn:'伤心', emoji:'😢', color:'#4a90d9', keyword:'sad sad song ballad' },
+  angry:     { cn:'生气', emoji:'😠', color:'#e74c3c', keyword:'angry rock punk' },
+  fearful:   { cn:'恐惧', emoji:'😨', color:'#9b59b6', keyword:'calm ambient relax' },
+  disgusted:  { cn:'厌恶', emoji:'🤢', color:'#7f8c8d', keyword:'indie chill' },
+  surprised: { cn:'惊讶', emoji:'😲', color:'#1abc9c', keyword:'edm electronic dance' },
+  neutral:   { cn:'中性', emoji:'😐', color:'#95a5a6', keyword:'lofi chill study' },
+};
+
+// Russell 坐标：每类情绪的愉悦度 v(-1~1) / 唤醒度 a(-1~1)
+const EMOTION_VA = {
+  happy:{v:0.8,a:0.6}, sad:{v:-0.7,a:-0.5}, angry:{v:-0.6,a:0.7},
+  fearful:{v:-0.6,a:0.5}, disgusted:{v:-0.5,a:0.1}, surprised:{v:0.2,a:0.8}, neutral:{v:0,a:0},
+};
+
+// 本地完整曲目：每类情绪预置 3 首免版税完整曲目（SoundHelix 公开演示音乐，可整曲播放）
+const SH = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-';
+const LOCAL_PLAYLIST = {
+  happy: [
+    { name:'阳光漫步（完整版）', artist:'免版税完整曲目', album:'明快电子', artwork:'https://picsum.photos/seed/h1/100/100', preview:SH+'3.mp3' },
+    { name:'元气午后（完整版）', artist:'免版税完整曲目', album:'轻快律动', artwork:'https://picsum.photos/seed/h2/100/100', preview:SH+'7.mp3' },
+    { name:'晴天序曲（完整版）', artist:'免版税完整曲目', album:'明朗旋律', artwork:'https://picsum.photos/seed/h3/100/100', preview:SH+'11.mp3' },
+  ],
+  sad: [
+    { name:'雨夜低吟（完整版）', artist:'免版税完整曲目', album:'舒缓忧郁', artwork:'https://picsum.photos/seed/s1/100/100', preview:SH+'2.mp3' },
+    { name:'孤独海岸线（完整版）', artist:'免版税完整曲目', album:'忧伤氛围', artwork:'https://picsum.photos/seed/s2/100/100', preview:SH+'8.mp3' },
+    { name:'低语独白（完整版）', artist:'免版税完整曲目', album:'安静抒情', artwork:'https://picsum.photos/seed/s3/100/100', preview:SH+'14.mp3' },
+  ],
+  angry: [
+    { name:'冲撞节拍（完整版）', artist:'免版税完整曲目', album:'快节奏有力', artwork:'https://picsum.photos/seed/a1/100/100', preview:SH+'5.mp3' },
+    { name:'燃烧频率（完整版）', artist:'免版税完整曲目', album:'强劲电子', artwork:'https://picsum.photos/seed/a2/100/100', preview:SH+'10.mp3' },
+    { name:'爆发脉冲（完整版）', artist:'免版税完整曲目', album:'热血节奏', artwork:'https://picsum.photos/seed/a3/100/100', preview:SH+'15.mp3' },
+  ],
+  fearful: [
+    { name:'深呼吸（完整版）', artist:'免版税完整曲目', album:'平静舒缓', artwork:'https://picsum.photos/seed/f1/100/100', preview:SH+'1.mp3' },
+    { name:'夜色安抚（完整版）', artist:'免版税完整曲目', album:'放松氛围', artwork:'https://picsum.photos/seed/f2/100/100', preview:SH+'6.mp3' },
+    { name:'安全岛（完整版）', artist:'免版税完整曲目', album:'治愈旋律', artwork:'https://picsum.photos/seed/f3/100/100', preview:SH+'13.mp3' },
+  ],
+  disgusted: [
+    { name:'冷静疏离（完整版）', artist:'免版税完整曲目', album:'中性独立', artwork:'https://picsum.photos/seed/d1/100/100', preview:SH+'4.mp3' },
+    { name:'慢调沉淀（完整版）', artist:'免版税完整曲目', album:'lofi 氛围', artwork:'https://picsum.photos/seed/d2/100/100', preview:SH+'9.mp3' },
+    { name:'冷感节拍（完整版）', artist:'免版税完整曲目', album:'克制电子', artwork:'https://picsum.photos/seed/d3/100/100', preview:SH+'16.mp3' },
+  ],
+  surprised: [
+    { name:'电光闪烁（完整版）', artist:'免版税完整曲目', album:'惊喜电子', artwork:'https://picsum.photos/seed/p1/100/100', preview:SH+'12.mp3' },
+    { name:'跃动时刻（完整版）', artist:'免版税完整曲目', album:'活力律动', artwork:'https://picsum.photos/seed/p2/100/100', preview:SH+'7.mp3' },
+    { name:'闪亮登场（完整版）', artist:'免版税完整曲目', album:'明快节奏', artwork:'https://picsum.photos/seed/p3/100/100', preview:SH+'11.mp3' },
+  ],
+  neutral: [
+    { name:'午后微醺（完整版）', artist:'免版税完整曲目', album:'lofi 学习', artwork:'https://picsum.photos/seed/n1/100/100', preview:SH+'1.mp3' },
+    { name:'安静流淌（完整版）', artist:'免版税完整曲目', album:'背景轻音乐', artwork:'https://picsum.photos/seed/n2/100/100', preview:SH+'2.mp3' },
+    { name:'专注时刻（完整版）', artist:'免版税完整曲目', album:'chill 氛围', artwork:'https://picsum.photos/seed/n3/100/100', preview:SH+'6.mp3' },
+  ],
+};
+
+createApp({
+  setup(){
+    const modelReady = ref(false);
+    const loadingText = ref('正在加载本地模型...');
+    const detection = ref(null); // 最近一次识别的人脸框/关键点
+    const showLandmarks = ref(true);
+    const overlay = ref(null);
+    const imgEl = ref(null);
+    const stageEl = ref(null);
+    const mediaType = ref(''); // image | video
+    const mediaUrl = ref('');
+    const videoEl = ref(null);
+    const camEl = ref(null);
+    const imgInput = ref(null);
+    const vidInput = ref(null);
+    const audioEl = ref(null);
+    const cameraOn = ref(false);
+    const error = ref('');
+    const emotion = ref('');
+    const probabilities = reactive({});
+    const localSongs = ref([]);
+    const onlineSongs = ref([]);
+    const onlineLoading = ref(false);
+    const onlineError = ref('');
+    const current = ref('');
+    const currentArtist = ref('');
+    const defaultArt = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#2a2f3a"/><text x="50" y="58" font-size="34" text-anchor="middle">♪</text></svg>';
+
+    let stream = null;
+    let detectTimer = null;
+    let pendingImg = null; // 模型未就绪时暂存待识别的图片
+
+    // 加载本地模型
+    onMounted(async () => {
+      if(location.protocol === 'file:'){
+        error.value = '检测到直接双击打开(file://)，浏览器禁止读取本地模型文件。请用 VSCode「Live Server」打开本文件，或在本目录运行 python -m http.server 后访问 http://localhost:8000/情绪音乐推荐.html';
+        return;
+      }
+      try {
+        const MODEL_URL = 'assets/models/';
+        loadingText.value = '① 加载人脸检测模型...';
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        loadingText.value = '② 加载关键点模型...';
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        loadingText.value = '③ 加载表情识别模型...';
+        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+        loadingText.value = '就绪';
+        modelReady.value = true;
+        // 模型就绪后，如果用户已经上传了图片，自动补识别一次
+        if(pendingImg) recognizeFrom(pendingImg);
+      } catch (e) {
+        error.value = '模型加载失败：' + e.message;
+      }
+    });
+
+    onBeforeUnmount(() => { stopCamera(); if(detectTimer) clearInterval(detectTimer); });
+
+    // 情绪中文映射 + 派生显示属性
+    const emotionCN = Object.fromEntries(Object.entries(EMOTION_META).map(([k,v])=>[k,v.cn]));
+    const emotionColor = Vue.computed(() => EMOTION_META[emotion.value]?.color || '#6c5ce7');
+    const emotionEmoji = Vue.computed(() => EMOTION_META[emotion.value]?.emoji || '🎵');
+    const emotionLabel = Vue.computed(() => EMOTION_META[emotion.value]?.cn || '');
+    // 整个页面主题色随情绪变化
+    const rootStyle = Vue.computed(() => ({
+      '--accent': emotionColor.value,
+      '--glow': emotionColor.value + '26',
+      '--glow2': emotionColor.value + '0d'
+    }));
+    // Russell 坐标点：v(-1~1)→x(20~180)，a(-1~1)→y(0~160)
+    const circumplex = Vue.computed(() => {
+      const va = EMOTION_VA[emotion.value] || {v:0,a:0};
+      return { x: 100 + va.v*80, y: 80 + va.a*70 };
+    });
+
+    function pickImage(){ imgInput.value && imgInput.value.click(); }
+    function pickVideo(){ vidInput.value && vidInput.value.click(); }
+
+    function onImage(e){
+      const f = e.target.files[0]; if(!f) return;
+      stopCamera();
+      mediaType.value = 'image';
+      mediaUrl.value = URL.createObjectURL(f);
+      error.value = '';
+      nextTick(()=> recognizeImage());
+    }
+
+    function onVideo(e){
+      const f = e.target.files[0]; if(!f) return;
+      stopCamera();
+      mediaType.value = 'video';
+      mediaUrl.value = URL.createObjectURL(f);
+      onlineSongs.value=[]; emotion.value='';
+      nextTick(()=>{
+        if(videoEl.value){
+          videoEl.value.onloadeddata = ()=>{ /* 手动点播放后识别 */ };
+          videoEl.value.onseeked = ()=> recognizeFrom(videoEl.value);
+          videoEl.value.onplay = ()=>{ if(detectTimer) clearInterval(detectTimer); detectTimer=setInterval(()=>recognizeFrom(videoEl.value),1500); };
+          videoEl.value.onpause = ()=>{ if(detectTimer) clearInterval(detectTimer); };
+        }
+      });
+    }
+
+    async function startCamera(){
+      error.value='';
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+        cameraOn.value = true;
+        mediaType.value=''; mediaUrl.value='';
+        await nextTick();
+        if(camEl.value){
+          camEl.value.srcObject = stream;
+          camEl.value.onloadedmetadata = ()=>{ if(detectTimer) clearInterval(detectTimer); detectTimer=setInterval(()=>recognizeFrom(camEl.value),1500); };
+        }
+      }catch(err){ error.value='无法访问摄像头：'+err.message; }
+    }
+
+    function stopCamera(){
+      if(detectTimer){ clearInterval(detectTimer); detectTimer=null; }
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      cameraOn.value=false;
+    }
+
+    function snapshot(){
+      if(!camEl.value) return;
+      const v = camEl.value;
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext('2d').drawImage(v,0,0);
+      stopCamera();
+      mediaType.value='image';
+      mediaUrl.value = c.toDataURL('image/jpeg');
+      nextTick(()=> recognizeImage());
+    }
+
+    async function recognizeImage(){
+      if(!mediaUrl.value) return;
+      const img = new Image();
+      img.crossOrigin='anonymous';
+      img.onload = async ()=>{ pendingImg = img; await recognizeFrom(img); };
+      img.src = mediaUrl.value;
+    }
+
+    // 手动重新识别当前图片
+    function reAnalyze(){ if(pendingImg) recognizeFrom(pendingImg); }
+
+    // 核心：本地情绪识别
+    async function recognizeFrom(source){
+      if(!modelReady.value){
+        error.value = '模型还在加载中，加载完成后会自动识别（看右上角黄点变绿点）...';
+        return;
+      }
+      error.value='';
+      try{
+        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+        const res = await faceapi.detectSingleFace(source, options)
+          .withFaceLandmarks()
+          .withFaceExpressions();
+        if(!res){
+          emotion.value=''; detection.value=null; error.value='未检测到人脸，请换清晰正面人脸';
+          if(overlay.value){ const c=overlay.value,cx=c.getContext('2d');cx.clearRect(0,0,c.width,c.height); }
+          return;
+        }
+        const ex = res.expressions;
+        // 取概率最高的情绪
+        let best='neutral', bestP=-1;
+        for(const k in ex){ probabilities[k]=ex[k]; if(ex[k]>bestP){bestP=ex[k];best=k;} }
+        emotion.value = best;
+        detection.value = res;
+        nextTick(()=>drawOverlay(source, res, best, bestP));
+        // 触发推荐
+        recommend(best);
+      }catch(e){ /* 视频帧偶发错误忽略 */ }
+    }
+
+    // 在图片上画人脸框 + 关键点 + 情绪标签
+    function drawOverlay(source, res, best, bestP){
+      if(!overlay.value) return;
+      const c = overlay.value;
+      const W = source.videoWidth || source.width || c.clientWidth || 400;
+      const H = source.videoHeight || source.height || c.clientHeight || 300;
+      c.width = W; c.height = H;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0,0,W,H);
+      const box = res.detection.box;
+      const color = EMOTION_META[best].color;
+      const l=14, lw=3;
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap='round';
+      // 四角取景框
+      ctx.beginPath();
+      ctx.moveTo(box.x, box.y+l); ctx.lineTo(box.x, box.y); ctx.lineTo(box.x+l, box.y);
+      ctx.moveTo(box.x+box.width-l, box.y); ctx.lineTo(box.x+box.width, box.y); ctx.lineTo(box.x+box.width, box.y+l);
+      ctx.moveTo(box.x, box.y+box.height-l); ctx.lineTo(box.x, box.y+box.height); ctx.lineTo(box.x+l, box.y+box.height);
+      ctx.moveTo(box.x+box.width-l, box.y+box.height); ctx.lineTo(box.x+box.width, box.y+box.height); ctx.lineTo(box.x+box.width, box.y+box.height-l);
+      ctx.stroke();
+      // 68 关键点
+      if(showLandmarks.value){
+        ctx.fillStyle = 'rgba(255,255,255,.9)';
+        for(const p of res.landmarks.positions){
+          ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI*2); ctx.fill();
+        }
+      }
+      // 情绪标签
+      const label = EMOTION_META[best].cn + ' ' + Math.round(bestP*100) + '%';
+      ctx.font = 'bold 18px sans-serif';
+      const tw = ctx.measureText(label).width;
+      const lx = box.x, ly = box.y - 36 < 0 ? box.y + 8 : box.y - 36;
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.roundRect(lx, ly, tw+16, 28, 6); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, lx+8, ly+20);
+    }
+
+    // 推荐算法：按情绪关键词查 iTunes 在线 API
+    async function recommend(emo){
+      // 本地歌单
+      localSongs.value = LOCAL_PLAYLIST[emo] || [];
+      onlineSongs.value=[]; onlineError.value='';
+      onlineLoading.value=true;
+      const kw = EMOTION_META[emo].keyword;
+      try{
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(kw)}&media=music&entity=song&limit=8`;
+        const r = await fetch(url);
+        const data = await r.json();
+        onlineSongs.value = (data.results||[]).map(s=>({
+          name: s.trackName, artist: s.artistName,
+          artwork: s.artworkUrl100, preview: s.previewUrl || ''
+        }));
+        if(onlineSongs.value.length===0) onlineError.value='未找到在线歌曲';
+      }catch(e){ onlineError.value='在线 API 请求失败：'+e.message; }
+      finally{ onlineLoading.value=false; }
+    }
+
+    async function play(song){
+      current.value = song.name;
+      currentArtist.value = song.artist;
+      let url = song.preview || '';
+      // 本地歌曲没有预置音频时，自动用歌名去在线库匹配一段试听
+      if(!url){
+        error.value = '正在为「' + song.name + '」匹配在线试听...';
+        try{
+          const q = encodeURIComponent(song.name + ' ' + (song.artist||''));
+          const r = await fetch(`https://itunes.apple.com/search?term=${q}&media=music&entity=song&limit=1`);
+          const d = await r.json();
+          if(d.results && d.results[0] && d.results[0].previewUrl){
+            url = d.results[0].previewUrl;
+          }
+        }catch(e){}
+      }
+      nextTick(()=>{
+        if(audioEl.value){
+          if(url){
+            error.value='';
+            audioEl.value.src = url;
+            audioEl.value.play().catch(()=>{});
+          }else{
+            error.value = '未找到这首歌的在线试听片段，换一首试试';
+          }
+        }
+      });
+    }
+
+    return{
+      modelReady, mediaType, mediaUrl, videoEl, camEl, imgInput, vidInput,
+      audioEl, cameraOn, error, emotion, probabilities, emotionCN,
+      localSongs, onlineSongs, onlineLoading, onlineError, current, currentArtist,
+      defaultArt, pickImage, pickVideo, onImage, onVideo, startCamera, stopCamera,
+      snapshot, play, reAnalyze, loadingText, rootStyle,
+      detection, showLandmarks, overlay, imgEl, stageEl, circumplex,
+      emotionColor, emotionEmoji, emotionLabel
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

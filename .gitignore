@@ -1,0 +1,5 @@
+_shots/
+_backup/
+_dl_*.py
+_download_models.py
+*.log
